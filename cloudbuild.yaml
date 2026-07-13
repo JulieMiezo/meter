@@ -12,26 +12,28 @@ steps:
       - bash
       - '-c'
       - |
-        set -e
         echo "=== Starting deployment to pm-01 ==="
-        cd /home/rd
+        cd /home/rd || exit 1
         echo "Current directory: `pwd`"
         echo "Pulling latest code from GitHub..."
-        git pull origin main
-        echo "Git pull completed successfully"
-        echo "Current commit: `git log --oneline -1`"
+        if git pull origin main; then
+          echo "Git pull completed successfully"
+          echo "Current commit: `git log --oneline -1`"
+        else
+          echo "Git pull failed"
+          exit 1
+        fi
         echo "Stopping old server process..."
-        sudo pkill -f "python3 server.py" || echo "No existing process found"
-        sleep 2
+        sudo pkill -9 -f "python3 server.py" || true
+        sleep 1
         echo "Starting new server process..."
-        sudo python3 server.py > /tmp/server.log 2>&1 &
-        echo "Server started"
-        sleep 2
-        if pgrep -f "python3 server.py" > /dev/null; then
+        nohup sudo python3 server.py > /tmp/server.log 2>&1 &
+        sleep 3
+        if sudo pgrep -f "python3 server.py" > /dev/null; then
           echo "✓ Server is running successfully"
         else
           echo "✗ Server failed to start"
-          cat /tmp/server.log
+          cat /tmp/server.log 2>/dev/null || echo "No log file"
           exit 1
         fi
         echo "=== Deployment to pm-01 completed ==="
@@ -49,26 +51,28 @@ steps:
       - bash
       - '-c'
       - |
-        set -e
         echo "=== Starting deployment to pm-02 ==="
-        cd /home/rd
+        cd /home/rd || exit 1
         echo "Current directory: `pwd`"
         echo "Pulling latest code from GitHub..."
-        git pull origin main
-        echo "Git pull completed successfully"
-        echo "Current commit: `git log --oneline -1`"
+        if git pull origin main; then
+          echo "Git pull completed successfully"
+          echo "Current commit: `git log --oneline -1`"
+        else
+          echo "Git pull failed"
+          exit 1
+        fi
         echo "Stopping old server process..."
-        sudo pkill -f "python3 server.py" || echo "No existing process found"
-        sleep 2
+        sudo pkill -9 -f "python3 server.py" || true
+        sleep 1
         echo "Starting new server process..."
-        sudo python3 server.py > /tmp/server.log 2>&1 &
-        echo "Server started"
-        sleep 2
-        if pgrep -f "python3 server.py" > /dev/null; then
+        nohup sudo python3 server.py > /tmp/server.log 2>&1 &
+        sleep 3
+        if sudo pgrep -f "python3 server.py" > /dev/null; then
           echo "✓ Server is running successfully"
         else
           echo "✗ Server failed to start"
-          cat /tmp/server.log
+          cat /tmp/server.log 2>/dev/null || echo "No log file"
           exit 1
         fi
         echo "=== Deployment to pm-02 completed ==="
