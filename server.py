@@ -1,4 +1,4 @@
-# CI/CD Test - 2026-07-13 - Fixed sudo permissions for deployment!
+# CI/CD Test - 2026-07-13 - Sudoers configured - full CI/CD working!
 # ----- import Miézo library -----
 import pm_db as pmdb
 import pm_fn as pmfn
