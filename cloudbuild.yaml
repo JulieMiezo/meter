@@ -1,0 +1,30 @@
+steps:
+  # 部署到 pm-01
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'deploy-pm-01'
+    args:
+      - 'compute'
+      - 'ssh'
+      - 'rd@pm-01'
+      - '--zone=asia-east1-b'
+      - '--project=power-meter-278701'
+      - '--'
+      - 'cd /home/rd && git pull origin main && pkill -f "python3 server.py" || true && sleep 2 && python3 server.py > /tmp/server.log 2>&1 &'
+
+  # 部署到 pm-02
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'deploy-pm-02'
+    args:
+      - 'compute'
+      - 'ssh'
+      - 'rd@pm-02'
+      - '--zone=asia-east1-b'
+      - '--project=power-meter-278701'
+      - '--'
+      - 'cd /home/rd && git pull origin main && pkill -f "python3 server.py" || true && sleep 2 && python3 server.py > /tmp/server.log 2>&1 &'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+onFailure:
+  - 'NOTIFY'
