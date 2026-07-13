@@ -9,24 +9,25 @@ steps:
       - '--zone=asia-east1-b'
       - '--project=power-meter-278701'
       - '--'
+      - bash
+      - '-c'
       - |
         set -e
         echo "=== Starting deployment to pm-01 ==="
         cd /home/rd
-        echo "Current directory: $(pwd)"
+        echo "Current directory: `pwd`"
         echo "Pulling latest code from GitHub..."
         git pull origin main
         echo "Git pull completed successfully"
-        echo "Current commit: $(git log --oneline -1)"
+        echo "Current commit: `git log --oneline -1`"
         echo "Stopping old server process..."
         pkill -f "python3 server.py" || echo "No existing process found"
         sleep 2
         echo "Starting new server process..."
         python3 server.py > /tmp/server.log 2>&1 &
-        SERVER_PID=$!
-        echo "Server started with PID: $SERVER_PID"
+        echo "Server started"
         sleep 2
-        if ps -p $SERVER_PID > /dev/null; then
+        if pgrep -f "python3 server.py" > /dev/null; then
           echo "✓ Server is running successfully"
         else
           echo "✗ Server failed to start"
@@ -45,24 +46,25 @@ steps:
       - '--zone=asia-east1-b'
       - '--project=power-meter-278701'
       - '--'
+      - bash
+      - '-c'
       - |
         set -e
         echo "=== Starting deployment to pm-02 ==="
         cd /home/rd
-        echo "Current directory: $(pwd)"
+        echo "Current directory: `pwd`"
         echo "Pulling latest code from GitHub..."
         git pull origin main
         echo "Git pull completed successfully"
-        echo "Current commit: $(git log --oneline -1)"
+        echo "Current commit: `git log --oneline -1`"
         echo "Stopping old server process..."
         pkill -f "python3 server.py" || echo "No existing process found"
         sleep 2
         echo "Starting new server process..."
         python3 server.py > /tmp/server.log 2>&1 &
-        SERVER_PID=$!
-        echo "Server started with PID: $SERVER_PID"
+        echo "Server started"
         sleep 2
-        if ps -p $SERVER_PID > /dev/null; then
+        if pgrep -f "python3 server.py" > /dev/null; then
           echo "✓ Server is running successfully"
         else
           echo "✗ Server failed to start"
