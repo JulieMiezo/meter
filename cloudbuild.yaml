@@ -9,7 +9,31 @@ steps:
       - '--zone=asia-east1-b'
       - '--project=power-meter-278701'
       - '--'
-      - 'cd /home/rd && git pull origin main && pkill -f "python3 server.py" || true && sleep 2 && python3 server.py > /tmp/server.log 2>&1 &'
+      - |
+        set -e
+        echo "=== Starting deployment to pm-01 ==="
+        cd /home/rd
+        echo "Current directory: $(pwd)"
+        echo "Pulling latest code from GitHub..."
+        git pull origin main
+        echo "Git pull completed successfully"
+        echo "Current commit: $(git log --oneline -1)"
+        echo "Stopping old server process..."
+        pkill -f "python3 server.py" || echo "No existing process found"
+        sleep 2
+        echo "Starting new server process..."
+        python3 server.py > /tmp/server.log 2>&1 &
+        SERVER_PID=$!
+        echo "Server started with PID: $SERVER_PID"
+        sleep 2
+        if ps -p $SERVER_PID > /dev/null; then
+          echo "✓ Server is running successfully"
+        else
+          echo "✗ Server failed to start"
+          cat /tmp/server.log
+          exit 1
+        fi
+        echo "=== Deployment to pm-01 completed ==="
 
   # 部署到 pm-02
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -21,7 +45,31 @@ steps:
       - '--zone=asia-east1-b'
       - '--project=power-meter-278701'
       - '--'
-      - 'cd /home/rd && git pull origin main && pkill -f "python3 server.py" || true && sleep 2 && python3 server.py > /tmp/server.log 2>&1 &'
+      - |
+        set -e
+        echo "=== Starting deployment to pm-02 ==="
+        cd /home/rd
+        echo "Current directory: $(pwd)"
+        echo "Pulling latest code from GitHub..."
+        git pull origin main
+        echo "Git pull completed successfully"
+        echo "Current commit: $(git log --oneline -1)"
+        echo "Stopping old server process..."
+        pkill -f "python3 server.py" || echo "No existing process found"
+        sleep 2
+        echo "Starting new server process..."
+        python3 server.py > /tmp/server.log 2>&1 &
+        SERVER_PID=$!
+        echo "Server started with PID: $SERVER_PID"
+        sleep 2
+        if ps -p $SERVER_PID > /dev/null; then
+          echo "✓ Server is running successfully"
+        else
+          echo "✗ Server failed to start"
+          cat /tmp/server.log
+          exit 1
+        fi
+        echo "=== Deployment to pm-02 completed ==="
 
 options:
   logging: CLOUD_LOGGING_ONLY
