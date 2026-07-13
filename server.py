@@ -1,4 +1,4 @@
-# CI/CD Test - 2026-07-13 - Full deployment test to pm-01 and pm-02!
+# CI/CD Test - 2026-07-13 - Fixed Cloud Build script execution!
 # ----- import Miézo library -----
 import pm_db as pmdb
 import pm_fn as pmfn
