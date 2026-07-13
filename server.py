@@ -1,4 +1,4 @@
-# CI/CD Test - 2026-07-13 - Sudoers configured - full CI/CD working!
+# CI/CD Test - 2026-07-13 - Improved deployment with nohup - ready to deploy!
 # ----- import Miézo library -----
 import pm_db as pmdb
 import pm_fn as pmfn
