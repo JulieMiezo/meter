@@ -131,19 +131,21 @@ def do_subscribe():
     print("MQTT subscribed:", len(result), "meters")
 
 def on_connect(client, userdata, flags, rc):
+    nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
     if rc == 0:
-        print("MQTT on connect successfully.")
+        print(f"[{nt}] MQTT connected successfully")
         do_subscribe()
         scheduler.add_job(relay_job, 'cron', minute=11, id='relay_job', replace_existing=True)
         scheduler.add_job(bal_job, 'interval', weeks=4, id='bal_job', replace_existing=True)
     else:
-        print(f"MQTT connect failed with code: {rc}")
+        print(f"[{nt}] MQTT connect failed with code: {rc}")
 
 def on_disconnect(client, userdata, rc):
+    nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
     if rc != 0:
-        print(f"MQTT disconnected unexpectedly, code: {rc}")
+        print(f"[{nt}] MQTT disconnected unexpectedly, code: {rc}, attempting to reconnect...")
     else:
-        print("MQTT disconnected cleanly")
+        print(f"[{nt}] MQTT disconnected cleanly")
 
 def on_message(client, userdata, msg):
     print(msg.topic, msg.payload)
