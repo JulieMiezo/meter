@@ -199,7 +199,9 @@ def on_message(client, userdata, msg):
         remove_job('mqtt_err_job_'+getID+'m')
         meterName = pmdb.db_function("db_tempbal", getID, BAL_DATA)
         if int(BAL_DATA)/100 < 1000:
-            pmfn.sendemail(getID, "balalert", meterName, BAL_DATA)
+            scheduler.add_job(pmfn.sendemail, 'date', run_date=datetime.now(tz) + timedelta(milliseconds=100),
+                             args=[getID, "balalert", meterName, BAL_DATA],
+                             id='sendemail_'+getID, replace_existing=True)
         print(getID, '加值成功，剩餘金額', nt, BAL_DATA)
 
     elif getCase == b'pmU':
