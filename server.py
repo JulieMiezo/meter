@@ -147,7 +147,7 @@ def on_disconnect(client, userdata, rc):
     else:
         print(f"[{nt}] MQTT disconnected cleanly")
 
-def on_message(client, userdata, msg):
+def _process_mqtt_message(msg):
     print(msg.topic, msg.payload)
     getID = msg.topic[0:18]
     getCase = msg.payload[0:3]
@@ -342,6 +342,13 @@ def on_message(client, userdata, msg):
         server = msg.topic
         publish.single(server+"/feedback", server, hostname=mqttserver, port=8083)
 
+def on_message(client, userdata, msg):
+    try:
+        _process_mqtt_message(msg)
+    except Exception as e:
+        nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+        getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
+        print(f"[{nt}] on_message error for {getID}: {str(e)}")
 
 
 class Root(object):
