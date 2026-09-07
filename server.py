@@ -723,7 +723,7 @@ client.on_connect = on_connect
 client.on_disconnect = on_disconnect
 client.on_message = on_message
 client.reconnect_delay_set(min_delay=1, max_delay=2000)
-client.connect(mqttserver, 8083, 60)
+client.connect(mqttserver, 8083, 300)  # keepalive: 5 分鐘
 client.loop_start()
 # client.loop_forever()
 
