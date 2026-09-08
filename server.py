@@ -11,13 +11,14 @@ from datetime import datetime, timezone, timedelta, date
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 from queue import Queue
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-# MQTT feedback 消息隊列
+# MQTT feedback 非同步處理
 mqtt_feedback_queue = Queue(maxsize=5000)
+mqtt_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt_feedback_")
 
 client = mqtt.Client()
 tz = pytz.timezone('Asia/Taipei')
@@ -352,26 +353,21 @@ def _process_mqtt_message(msg):
         server = msg.topic
         publish.single(server+"/feedback", server, hostname=mqttserver, port=8083)
 
-def on_message(client, userdata, msg):
+def _process_feedback_async(msg):
     try:
-        mqtt_feedback_queue.put_nowait(msg)
+        _process_mqtt_message(msg)
     except Exception as e:
         nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
         getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
-        logger.error(f"[{nt}] on_message queue error for {getID}: {str(e)}")
+        logger.error(f"[{nt}] feedback error for {getID}: {str(e)}")
 
-def mqtt_feedback_worker():
-    while True:
-        try:
-            msg = mqtt_feedback_queue.get(timeout=1)
-            try:
-                _process_mqtt_message(msg)
-            except Exception as e:
-                nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
-                logger.error(f"[{nt}] process_mqtt_message error for {getID}: {str(e)}")
-        except:
-            pass
+def on_message(client, userdata, msg):
+    try:
+        mqtt_executor.submit(_process_feedback_async, msg)
+    except Exception as e:
+        nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+        getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
+        logger.error(f"[{nt}] on_message submit error for {getID}: {str(e)}")
 
 
 class Root(object):
@@ -747,10 +743,7 @@ def load_http_server():
     server.subscribe()
     
 # ----------------------------- [ 系統設定 ] -----------------------------
-# 啟動 MQTT feedback 後台工作線程
-feedback_thread = threading.Thread(target=mqtt_feedback_worker, daemon=True)
-feedback_thread.start()
-logger.info("MQTT feedback worker thread started")
+logger.info("MQTT feedback executor initialized with 4 worker threads")
 
 # 設定MQTT連線
 client.on_log=on_log
