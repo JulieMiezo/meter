@@ -10,9 +10,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone, timedelta, date
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
+from queue import Queue
+import threading
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
+
+# MQTT feedback 消息隊列
+mqtt_feedback_queue = Queue(maxsize=5000)
 
 client = mqtt.Client()
 tz = pytz.timezone('Asia/Taipei')
@@ -349,11 +354,24 @@ def _process_mqtt_message(msg):
 
 def on_message(client, userdata, msg):
     try:
-        _process_mqtt_message(msg)
+        mqtt_feedback_queue.put_nowait(msg)
     except Exception as e:
         nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
         getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
-        logger.error(f"[{nt}] on_message error for {getID}: {str(e)}")
+        logger.error(f"[{nt}] on_message queue error for {getID}: {str(e)}")
+
+def mqtt_feedback_worker():
+    while True:
+        try:
+            msg = mqtt_feedback_queue.get(timeout=1)
+            try:
+                _process_mqtt_message(msg)
+            except Exception as e:
+                nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
+                logger.error(f"[{nt}] process_mqtt_message error for {getID}: {str(e)}")
+        except:
+            pass
 
 
 class Root(object):
@@ -729,6 +747,11 @@ def load_http_server():
     server.subscribe()
     
 # ----------------------------- [ 系統設定 ] -----------------------------
+# 啟動 MQTT feedback 後台工作線程
+feedback_thread = threading.Thread(target=mqtt_feedback_worker, daemon=True)
+feedback_thread.start()
+logger.info("MQTT feedback worker thread started")
+
 # 設定MQTT連線
 client.on_log=on_log
 client.on_connect = on_connect
