@@ -310,33 +310,38 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                     cursor.execute(sql, (user_id, tempKWh, remark))
                     mydb.commit()
                 return "ok"
-            
-
-            except Error as e:
-                if mydb:
-                    mydb.rollback()
-
-                error_msg = str(e)
-                is_lock_timeout = "1205" in error_msg or "Lock wait timeout" in error_msg
-
-                if is_lock_timeout and attempt < MAX_RETRIES - 1:
-                    wait_time = RETRY_DELAY * (2 ** attempt)
-                    logger.warning(f"[{case}] 鎖定超時，{wait_time:.2f} 秒後重試 ({attempt + 1}/{MAX_RETRIES})")
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    logger.error(f"[{case}] 資料庫操作失敗: {e}")
-                    return None
-
-            finally:
-                if cursor:
-                    cursor.close()
-                if mydb:
-                    mydb.close()
 
             return "ok"
 
         except Error as e:
-            logger.error(f"[{case}] 最終失敗: {e}")
-            return None
+            if mydb:
+                try:
+                    mydb.rollback()
+                except:
+                    pass
+
+            error_msg = str(e)
+            is_lock_timeout = "1205" in error_msg or "Lock wait timeout" in error_msg
+
+            if is_lock_timeout and attempt < MAX_RETRIES - 1:
+                wait_time = RETRY_DELAY * (2 ** attempt)
+                logger.warning(f"[{case}] 鎖定超時，{wait_time:.2f} 秒後重試 ({attempt + 1}/{MAX_RETRIES})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"[{case}] 資料庫操作失敗: {e}")
+                return None
+
+        finally:
+            if cursor:
+                try:
+                    cursor.close()
+                except:
+                    pass
+            if mydb:
+                try:
+                    mydb.close()
+                except:
+                    pass
+
+    return None
 
