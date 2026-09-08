@@ -10,14 +10,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone, timedelta, date
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
-from queue import Queue
-from threading import Thread
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-msg_queue = Queue()
-db_worker_thread = None
 client = mqtt.Client()
 tz = pytz.timezone('Asia/Taipei')
 scheduler = BackgroundScheduler(job_defaults={'coalesce': True, 'max_instances': 1})
@@ -112,17 +108,6 @@ def remove_job(x): # x = job id
     for job in scheduler.get_jobs():
         if job.id.startswith(x):scheduler.remove_job(job.id)
 
-def db_worker():
-    while True:
-        try:
-            msg = msg_queue.get()
-            if msg is None: break
-            _process_mqtt_message(msg)
-        except Exception as e:
-            nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-            logger.error(f"[{nt}] db_worker error: {str(e)}")
-        finally:
-            msg_queue.task_done()
 
 def switchstart(x): # 按鈕恢復供電
     Key = "QI3M8Q"
@@ -363,7 +348,12 @@ def _process_mqtt_message(msg):
         publish.single(server+"/feedback", server, hostname=mqttserver, port=8083)
 
 def on_message(client, userdata, msg):
-    msg_queue.put(msg)
+    try:
+        _process_mqtt_message(msg)
+    except Exception as e:
+        nt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+        getID = msg.topic[0:18] if len(msg.topic) > 18 else msg.topic
+        logger.error(f"[{nt}] on_message error for {getID}: {str(e)}")
 
 
 class Root(object):
@@ -739,14 +729,6 @@ def load_http_server():
     server.subscribe()
     
 # ----------------------------- [ 系統設定 ] -----------------------------
-# 初始化數據庫連接池
-pmdb.init_db_pool()
-
-# 啟動數據庫工作線程
-db_worker_thread = Thread(target=db_worker, daemon=False)
-db_worker_thread.start()
-logger.info("Database worker thread started")
-
 # 設定MQTT連線
 client.on_log=on_log
 client.on_connect = on_connect
