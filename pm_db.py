@@ -1,7 +1,7 @@
 import mysql.connector
-from mysql.connector import Error, pooling
+from mysql.connector import Error
 from datetime import datetime, timezone, timedelta
-import pytz, json, os, logging, time
+import pytz, json, os, time, logging
 tz = pytz.timezone('Asia/Taipei')
 from dotenv import load_dotenv
 load_dotenv()
@@ -9,181 +9,96 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-db_pool = None
 MAX_RETRIES = 3
 RETRY_DELAY = 0.5
 
-def init_db_pool():
-    global db_pool
-    if db_pool is None:
-        db_pool = pooling.MySQLConnectionPool(
-            pool_name="mqttpool",
-            pool_size=5,
-            pool_reset_session=True,
+def db_connect(retry=0):
+    try:
+        return mysql.connector.connect(
             host=os.getenv("HOST"),
             user=os.getenv("USER"),
             password=os.getenv("PASSWORD"),
             database=os.getenv("DATABASE"),
-            autocommit=False,
-            connection_timeout=15,
-            get_warnings=False
+            connection_timeout=30,
+            autocommit=False
         )
-    return db_pool
+    except Error as e:
+        if retry < 2:
+            time.sleep(0.2 * (2 ** retry))
+            return db_connect(retry + 1)
+        raise
 
-def _execute_query(query_func, case_name):
-    """
-    執行查詢並自動重試鎖定超時錯誤
-    query_func: 執行查詢的函數，接收 mydb 和 cursor
-    """
+def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
     for attempt in range(MAX_RETRIES):
         mydb = None
         cursor = None
         try:
-            pool = init_db_pool()
-            mydb = pool.get_connection()
+            mydb = db_connect()
             cursor = mydb.cursor()
 
-            result = query_func(mydb, cursor)
-            return result
-
-        except Error as e:
-            if mydb:
-                try:
-                    mydb.rollback()
-                except:
-                    pass
-
-            error_msg = str(e)
-            is_lock_timeout = "1205" in error_msg or "Lock wait timeout" in error_msg
-
-            if is_lock_timeout and attempt < MAX_RETRIES - 1:
-                wait_time = RETRY_DELAY * (2 ** attempt)
-                logger.warning(f"[{case_name}] 鎖定超時，{wait_time:.2f} 秒後重試 ({attempt + 1}/{MAX_RETRIES})")
-                time.sleep(wait_time)
-            else:
-                logger.error(f"[{case_name}] 資料庫操作失敗: {e}")
-                return None
-
-        finally:
-            if cursor:
-                try:
-                    cursor.close()
-                except:
-                    pass
-            if mydb:
-                try:
-                    mydb.close()
-                except:
-                    pass
-
-def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
-    try:
-        # MQTT Subscribe
-        if case == "db_mqttsub":
-            def query(mydb, cursor):
+            if case == "db_mqttsub":
                 cursor.execute("SELECT meterID FROM PM_user WHERE meterType < 5")
-                return cursor.fetchall()
-            return _execute_query(query, case)
-
-        # 檢查ID
-        elif case == "db_idcheck":
-            def query(mydb, cursor):
+                result = cursor.fetchall()
+                return result
+            elif case == "db_idcheck":
                 sql = "SELECT 1 FROM PM_user Where meterID Like %s"
                 cursor.execute(sql, (PMID,))
-                return cursor.fetchone()
-            return _execute_query(query, case)
-
-        # esp8266 say hello
-        elif case == "db_hello":
-            def query(mydb, cursor):
+                result = cursor.fetchone()
+                return result
+            elif case == "db_hello":
                 sql = "UPDATE PM_user SET conState = '1' WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # esp8266 online check
-        elif case == "db_online_prepay":
-            def query(mydb, cursor):
+            elif case == "db_online_prepay":
                 meterType = ["1", "2", "3", "4", "9"]
                 placeholders = ','.join(['%s'] * len(meterType))
                 sql = f"SELECT meterID FROM PM_user WHERE conState = '1' AND onlineDate IS NOT NULL AND meterType in ({placeholders})"
                 cursor.execute(sql, meterType)
-                return cursor.fetchall()
-            return _execute_query(query, case)
-
-        # 8266 no feedback
-        elif case == "db_mqtterr":
-            def query(mydb, cursor):
+                result = cursor.fetchall()
+                return result
+            elif case == "db_mqtterr":
                 sql = "UPDATE PM_user SET conState = '0' WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 取得電量結算暫存
-        elif case == "db_tempkwh":
-            def query(mydb, cursor):
+            elif case == "db_tempkwh":
                 sql = "UPDATE PM_user SET tempKWh = %s WHERE meterID = %s"
                 cursor.execute(sql, (x, PMID))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 取得電量結算暫
-        elif case == "db_tempkwhget":
-            def query(mydb, cursor):
+            elif case == "db_tempkwhget":
                 sql = "SELECT tempKWh FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
-                return result[0]
-            return _execute_query(query, case)
-
-        # 取得餘額結算暫存
-        elif case == "db_tempbal":
-            def query(mydb, cursor):
+                return result[0] if result else None
+            elif case == "db_tempbal":
                 sql = "UPDATE PM_user SET tempBal = %s WHERE meterID = %s"
                 cursor.execute(sql, (x, PMID))
                 mydb.commit()
                 sql = "SELECT meterName FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
-                return result[0]
-            return _execute_query(query, case)
-
-        # 取得餘額結算暫存並清空
-        elif case == "db_tempbalget":
-            def query(mydb, cursor):
+                return result[0] if result else None
+            elif case == "db_tempbalget":
                 sql = "SELECT tempBal FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
                 sql = "UPDATE PM_user SET tempBal = NULL WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 mydb.commit()
-                return result[0]
-            return _execute_query(query, case)
-
-        # 修改供電狀態
-        elif case == "db_stateset":
-            def query(mydb, cursor):
+                return result[0] if result else None
+            elif case == "db_stateset":
                 sql = "UPDATE PM_user SET meterState = %s WHERE meterID = %s"
                 cursor.execute(sql, (x, PMID))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 取得供電狀態
-        elif case == "db_stateget":
-            def query(mydb, cursor):
+            elif case == "db_stateget":
                 sql = "SELECT meterState FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
-                return result[0]
-            return _execute_query(query, case)
-
-        # 更新供電狀態
-        elif case == "db_state_update":
-            def query(mydb, cursor):
+                return result[0] if result else None
+            elif case == "db_state_update":
                 sql = "SELECT id, meterState, meterBreaker FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
@@ -207,12 +122,7 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                         if (action_result[0] == "供電" and x == "1") or (action_result[0] == "斷電" and x == "0"):
                             cursor.execute("UPDATE PM_user SET meterState = %s WHERE meterID = %s", (x, PMID))
                             mydb.commit()
-                return "ok"
-            return _execute_query(query, case)
-
-        # 供電狀態switch waiting
-        elif case == "db_switchset":
-            def query(mydb, cursor):
+            elif case == "db_switchset":
                 sql = "UPDATE PM_user SET switchWait = %s WHERE meterID = %s"
                 cursor.execute(sql, (x, PMID))
                 mydb.commit()
@@ -233,29 +143,17 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                     cursor.execute(sql, (result[0],))
                     mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 讀取供電切換switchWait狀態
-        elif case == "db_switchget":
-            def query(mydb, cursor):
+            elif case == "db_switchget":
                 sql = "SELECT switchWait FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
-                return result[0]
-            return _execute_query(query, case)
-
-        # 修改扣費模式
-        elif case == "db_typeset":
-            def query(mydb, cursor):
+                return result[0] if result else None
+            elif case == "db_typeset":
                 sql = "UPDATE PM_user SET countType = %s WHERE meterID = %s"
                 cursor.execute(sql, (x, PMID))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 原電量測試找Bug / API 使用紀錄
-        elif case == "db_kwhtest" or case == "db_actionnote":
-            def query(mydb, cursor):
+            elif case == "db_kwhtest" or case == "db_actionnote":
                 sql = "SELECT id, tempKWh FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
@@ -267,11 +165,7 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                 cursor.execute(sql, (str(user_id), x, y, z_val))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 改寫單位電量變更API
-        elif case == "db_actionget":
-            def query(mydb, cursor):
+            elif case == "db_actionget":
                 sql = "SELECT data, value FROM PM_test WHERE (data = %s or data = %s) AND value <> 'Success' limit 1"
                 cursor.execute(sql, (x, y))
                 result = cursor.fetchone()
@@ -281,69 +175,39 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                     mydb.commit()
                     return result[1]
                 return None
-            return _execute_query(query, case)
-
-        # 改寫單位電量變更API - 失敗
-        elif case == "db_actionerror":
-            def query(mydb, cursor):
+            elif case == "db_actionerror":
                 sql = "UPDATE PM_test SET value = 'err0' WHERE data = %s"
                 cursor.execute(sql, (PMID,))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 查詢是否變更完成
-        elif case == "db_actioncheck":
-            def query(mydb, cursor):
+            elif case == "db_actioncheck":
                 sql = "SELECT value FROM PM_test WHERE data = %s"
                 cursor.execute(sql, (x,))
                 result = cursor.fetchone()
-                return result[0]
-            return _execute_query(query, case)
-
-        # 設定單位電價
-        elif case == "db_unitset":
-            def query(mydb, cursor):
+                return result[0] if result else None
+            elif case == "db_unitset":
                 sql = "UPDATE PM_user SET unitPrice = %s WHERE meterID = %s"
                 cursor.execute(sql, (int(x)/100, PMID))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # 清除餘額
-        elif case == "db_zeromoney":
-            def query(mydb, cursor):
+            elif case == "db_zeromoney":
                 sql = "UPDATE PM_user SET tempBal = '0' WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # API執行『預約動作』前，查詢KEY
-        elif case == "db_keycheck":
-            def query(mydb, cursor):
+            elif case == "db_keycheck":
                 sql = "SELECT APIUser FROM APIlist WHERE APIKey = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
                 return result is not None
-            return _execute_query(query, case)
-
-        # 取得設備連線狀態
-        elif case == "db_get_conn_state":
-            def query(mydb, cursor):
+            elif case == "db_get_conn_state":
                 sql = "SELECT conState FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
-                if not result:
-                    return "err2"
-                elif result[0] == 0:
-                    return "0"
+                if not result: return "err2"
+                elif result[0] == 0: return "0"
                 return "1"
-            return _execute_query(query, case)
-
-        # Pending list 操作
-        elif case == "add_meter_pending_job":
-            def query(mydb, cursor):
+            elif case == "add_meter_pending_job":
                 sql = "SELECT id, meterType FROM PM_user WHERE meterID = %s"
                 cursor.execute(sql, (PMID,))
                 result = cursor.fetchone()
@@ -359,11 +223,7 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                     cursor.execute(sql, (user_id, act, user_id, act))
                     mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
-
-        # Pending list 檢查更新
-        elif case == "update_meter_pending_job":
-            def query(mydb, cursor):
+            elif case == "update_meter_pending_job":
                 sql = "SELECT b.id, b.tempKWh FROM PM_pending_list a INNER JOIN PM_user b ON a.user_id = b.id WHERE b.meterID = %s AND a.action = %s AND a.closeAt IS NULL LIMIT 1"
                 cursor.execute(sql, (PMID, x))
                 result = cursor.fetchone()
@@ -378,8 +238,37 @@ def db_function(case, PMID=0, x=0, y=0, z=0, a=0, b=0):
                     cursor.execute(sql, (user_id, tempKWh, remark))
                     mydb.commit()
                 return "ok"
-            return _execute_query(query, case)
 
-    except Exception as e:
-        logger.error(f"[{case}] 未預期的錯誤: {e}")
-        return None
+            return "ok"
+
+        except Error as e:
+            if mydb:
+                try:
+                    mydb.rollback()
+                except:
+                    pass
+
+            error_msg = str(e)
+            is_timeout = "timeout" in error_msg.lower() or "1205" in error_msg
+
+            if is_timeout and attempt < MAX_RETRIES - 1:
+                wait_time = RETRY_DELAY * (2 ** attempt)
+                logger.warning(f"[{case}] 連接超時，{wait_time:.2f} 秒後重試 ({attempt + 1}/{MAX_RETRIES})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"[{case}] 資料庫操作失敗: {e}")
+                return None
+
+        finally:
+            if cursor:
+                try:
+                    cursor.close()
+                except:
+                    pass
+            if mydb:
+                try:
+                    mydb.close()
+                except:
+                    pass
+
+    return None
